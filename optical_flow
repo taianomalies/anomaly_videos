@@ -1,0 +1,91 @@
+import os
+
+import cv2
+import numpy as np
+from keras.layers import Conv3D, MaxPooling3D
+from tensorflow.keras.layers import Input, Conv3DTranspose, ConvLSTM2D
+from tensorflow.keras.models import Model
+
+frame_height = 0
+frame_width = 0
+
+def calculate_optical_flow(frame_directory):
+    print((frame_directory) )
+    print(os.listdir(frame_directory) )
+    frame_files = sorted(file for file in os.listdir(frame_directory) if file.endswith('.tif'))
+    #print(frame_files)  # Add this line to check the frame files
+
+    frame_count = len(frame_files)
+    #print(frame_count)  # Add this line to check the frame count
+
+    # Read the first frame to get its dimensions
+    first_frame = cv2.imread(os.path.join(frame_directory, frame_files[0]))
+    
+    if first_frame is None:
+        print("Error: Failed to read the first frame")
+        return None
+    #first_frame = cv2.resize(first_frame, (255, 255))
+    frame_height, frame_width, channels = first_frame.shape
+
+    # Create an empty array to store the optical flow map volume
+    optical_flow_volume = np.zeros((frame_count - 1, frame_height, frame_width, 2), dtype=np.float32)
+
+    prev_gray = cv2.cvtColor(first_frame, cv2.COLOR_BGR2GRAY)
+
+    for frame_index in range(1, frame_count):
+        frame = cv2.imread(os.path.join(frame_directory, frame_files[frame_index]))
+        #frame = cv2.resize(frame, (255, 255))
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        flow = cv2.calcOpticalFlowFarneback(prev_gray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+
+        # Store the optical flow in the optical flow map volume
+        optical_flow_volume[frame_index - 1, :, :, 0] = flow[..., 0]
+        optical_flow_volume[frame_index - 1, :, :, 1] = flow[..., 1]
+
+        prev_gray = gray
+
+    return optical_flow_volume, frame_height, frame_width, channels
+
+
+def calculate_optical_flow_datasets(paths):
+    optical_flow_dataset = []
+    max_frames = 0
+    max_height = 0
+    max_width = 0
+    channels = 0
+
+    for dataset_path in paths:
+        # Loop through the directories in the dataset directory
+        for video_directory in os.listdir(dataset_path):
+
+            video_path = os.path.join(dataset_path, video_directory)
+            optical_flow_video, height, width, channels = calculate_optical_flow(video_path)
+            optical_flow_dataset.append(optical_flow_video)
+
+            # Update the maximum dimensions
+            max_frames = max(max_frames, optical_flow_video.shape[0])
+            max_height = max(max_height, optical_flow_video.shape[1])
+            max_width = max(max_width, optical_flow_video.shape[2])
+
+    # Create a new list to store resized and padded optical flow datasets
+    resized_optical_flow_dataset = []
+
+    # Resize and pad the optical flow datasets to have the same shape
+    for opt_flow in optical_flow_dataset:
+        frames, height, width, channels = opt_flow.shape
+        if frames < max_frames or height < max_height or width < max_width:
+            # Pad the optical flow dataset with zeros
+            padding_frames = max_frames - frames
+            padding_height = max_height - height
+            padding_width = max_width - width
+            padded_opt_flow = np.pad(
+                opt_flow,
+                [(0, padding_frames), (0, padding_height), (0, padding_width), (0, 0)],
+                mode='constant'
+            )
+            resized_optical_flow_dataset.append(padded_opt_flow)
+        else:
+            resized_optical_flow_dataset.append(opt_flow)
+
+    return np.array(resized_optical_flow_dataset), max_height, max_width, channels, max_frames
