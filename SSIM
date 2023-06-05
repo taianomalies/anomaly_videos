@@ -1,0 +1,9 @@
+import numpy as np
+from skimage.metrics import structural_similarity as ssim
+# Assuming 'image1' and 'image2' are the two images to compare
+# Ensure that the images have the same dimensions and data type
+# Convert the images to the range [0, 255]
+image1 = (image1 * 255).astype(np.uint8)
+image2 = (image2 * 255).astype(np.uint8)
+ms_ssim_score = ssim(image1, image2, multichannel=True)
+print("MS-SSIM score:", ms_ssim_score)
